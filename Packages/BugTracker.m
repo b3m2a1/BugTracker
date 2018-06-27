@@ -29,6 +29,8 @@ BugsToDataset::usage=
 PackageScopeBlock[
 	BugsNotebookAddDataDialog::usage="Opens a dialog for getting bug data";
 	BugsNotebookSearchBar::usage="Search bar for a bugs notebook";
+	BugsNotebookViewDatasetButton::usage="";
+	BugsNotebookViewListButton::usage="";
 	BugsCellToBug::usage=
 	"Converts a cell to a bug";
 	]
@@ -95,6 +97,14 @@ NewBugsNotebook[
 								]
 							}, 
 						"Chapter"
+						],
+					Cell[
+						TextData@
+							{
+								Cell[BoxData@ToBoxes@BugsNotebookViewListButton[], "Text"],
+								Cell[BoxData@ToBoxes@BugsNotebookViewDatasetButton[], "Text"]
+								},
+						"Text"
 						]
 					},
 				StyleDefinitions->PackageFEFile["Private", "BugTracker.nb"]
@@ -138,23 +148,28 @@ BugsNotebookOpen[
 Options[BugsNotebookCell]=
 	{
 		"Title"->Automatic,
+		"ID"->Automatic,
+		"CreationDate"->Automatic,
+		"ResolutionDate"->Automatic,
+		"Keywords"->Automatic,
+		"Package"->Automatic,
 		"Description"->Automatic,
-		"Timestamp"->Automatic,
-		"Examples"->None,
-		"Resolved"->False,
-		"Keywords"->{},
-		"Package"->None
+		"Examples"->Automatic,
+		"Notes"->Automatic
 		};
 BugsNotebookCell[tag_String, ops:OptionsPattern[]]:=
 	Module[
 		{
 			title,
 			desc,
-			stamp,
+			id,
+			created,
+			resolved,
 			kw,
 			ex,
 			res,
-			pack
+			pack,
+			notes
 			},
 		title=
 			Replace[OptionValue["Title"],
@@ -176,11 +191,32 @@ BugsNotebookCell[tag_String, ops:OptionsPattern[]]:=
 					Except[{__String}]->{"keyword1", "keyword2"}
 					}
 				];
-		stamp=
-			Replace[OptionValue["Timestamp"], 
+		id=
+			Replace[OptionValue["ID"],
+				{
+					i_Integer:>ToString[i],
+					Except[_String]->""
+					}
+				];
+		created=
+			Replace[OptionValue["CreationDate"], 
 				{
 					d_DateObject:>DateString[d],
 					Except[_String?(StringLength[#]>0&)]->DateString[],
+					s_String:>
+						Replace[Quiet@DateObject[s], 
+							{
+								d_DateObject:>DateString[d],
+								_->s
+								}
+							]
+					}
+				];
+		resolved=
+			Replace[OptionValue["ResolutionDate"], 
+				{
+					d_DateObject:>DateString[d],
+					Except[_String?(StringLength[#]>0&)]->"",
 					s_String:>
 						Replace[Quiet@DateObject[s], 
 							{
@@ -200,8 +236,10 @@ BugsNotebookCell[tag_String, ops:OptionsPattern[]]:=
 			Replace[OptionValue["Examples"],
 				Except[_List]:>{"<<Example>>"}
 				];
-		res=
-			TrueQ@OptionValue["Resolved"];
+		notes=
+			Replace[OptionValue["Notes"],
+				Except[_List]:>{"<<Note>>"}
+				];
 		Cell[
 			CellGroupData@
 				{
@@ -216,11 +254,13 @@ BugsNotebookCell[tag_String, ops:OptionsPattern[]]:=
 								Cell[
 									BoxData@
 										TogglerBox[
-											Dynamic[
-												CurrentValue[
-													EvaluationCell[],
-													{TaggingRules, "Bugs", tag, "Resolved"},
-													res
+											With[{rr=StringLength@resolved>0},
+												Dynamic[
+													CurrentValue[
+														EvaluationCell[],
+														{TaggingRules, "Bugs", tag, "Resolved"},
+														rr
+														]
 													]
 												],
 											{
@@ -230,7 +270,6 @@ BugsNotebookCell[tag_String, ops:OptionsPattern[]]:=
 											"\[CheckedBox]"
 											],
 									"BugResolved",
-									CellTags->{"Bug", tag, "Resolved"},
 									Deployed->True,
 									Deletable->False
 									]
@@ -238,17 +277,24 @@ BugsNotebookCell[tag_String, ops:OptionsPattern[]]:=
 						"Section", "BugTitle", 
 						CellTags->{"Bug", tag, "Title"}
 						],
-					Cell[stamp, "Message", "Text", "BugTimestamp", 
-						CellTags->{"Bug", tag, "Timestamp"}
+					Cell[created, "Text", "BugAnnotation", "BugTimestamp", "BugCreated",
+						CellTags->{"Bug", tag, "CreationDate"}
+						],
+					Cell[resolved, "Text", "BugAnnotation", "BugTimestamp", "BugResolved",
+						CellTags->{"Bug", tag, "ResolutionDate"}
+						],
+					Cell[id, "Text", "BugAnnotation", "BugID", 
+						CellTags->{"Bug", tag, "ID"}
 						],
 					Cell[
-						pack, "Text", "BugPackage",
+						pack, "Text", "BugAnnotation", "BugPackage",
 						CellTags->{"Bug", tag, "Package"}
 						],
 					Cell[
-						TextData@Riffle[kw, ", "], "Text", "BugKeywords", 
+						TextData@Riffle[kw, ", "], "Text", "BugAnnotation", "BugKeywords", 
 						CellTags->{"Bug", tag, "Keywords"}
 						],
+					Cell["Description", "Subsection"],
 					Cell[desc, "Text", "BugDescription",
 						CellTags->{"Bug", tag, "Description"}
 						],
@@ -259,6 +305,23 @@ BugsNotebookCell[tag_String, ops:OptionsPattern[]]:=
 								],
 							Replace[
 								ex,
+								{
+									s_String:>
+										Cell[s, "Text"],
+									e:Except[_String]:>
+										Cell[BoxData@ToBoxes[e], "Output"]
+									},
+								1
+								]
+							}
+						],
+					Cell[
+						CellGroupData@Flatten@{
+							Cell["Notes", "Subsection", "BugNotes",
+								CellTags->{"Bug", tag, "Notes"}
+								],
+							Replace[
+								notes,
 								{
 									s_String:>
 										Cell[s, "Text"],
@@ -282,13 +345,17 @@ BugsNotebookCell[tag_String, ops:OptionsPattern[]]:=
 Options[BugsNotebookAdd]=
 	Options[BugsNotebookCell];
 BugsNotebookAdd[nb_NotebookObject, tag_String, ops:OptionsPattern[]]:=
-	FrontEndExecute@
-		{
-			FrontEnd`SelectionMove[nb, After, Notebook];
-			FrontEnd`NotebookWrite[nb,
-				BugsNotebookCell[tag ,ops]
+	(
+		SelectionMove[nb, After, Notebook];
+		NotebookWrite[nb,
+			BugsNotebookCell[tag,
+				ops,
+				"ID"->
+					1+Length@
+						Cells[nb, CellTags->"Bug", CellStyle->"BugTitle"]
 				]
-			};
+			]
+		);
 
 
 (* ::Subsubsection::Closed:: *)
@@ -471,9 +538,106 @@ BugsNotebookSearchBar[ops:OptionsPattern[]]:=
 	}
 
 
+(* ::Subsubsection::Closed:: *)
+(*BugsNotebookView*Button*)
+
+
+
+(* ::Subsubsubsection::Closed:: *)
+(*BugsNotebookWriteViewCell*)
+
+
+
+BugsNotebookWriteViewCell[data_]:=
+	With[
+		{
+			cell=
+				Cell[BoxData@ToBoxes@data, "Output",
+					CellTags->{"Bugs", "BugsView"}
+					]
+			},
+		Replace[
+			Cells[FrontEnd`EvaluationNotebook[], CellTags->"BugsView"],
+			{
+				{c_, ___}:>
+					NotebookWrite[c, cell],
+				_:>
+					Internal`WithLocalSettings[
+						FrontEndExecute@
+							FrontEnd`NotebookSuspendScreenUpdates@FrontEnd`EvaluationNotebook[],
+						FrontEndExecute@
+							Flatten@{
+								FrontEnd`SelectionMove[FrontEnd`EvaluationCell[], After, Cell],
+								ConstantArray[
+									FrontEnd`SelectionMove[FrontEnd`EvaluationNotebook[], After, Cell],
+									5
+									]
+								};
+						NotebookWrite[EvaluationNotebook[], cell],
+						FrontEndExecute@
+							FrontEnd`NotebookResumeScreenUpdates@FrontEnd`EvaluationNotebook[]
+						]
+				}
+			]
+		]
+
+
+(* ::Subsubsubsection::Closed:: *)
+(*BugsNotebookViewListButton*)
+
+
+
+BugsNotebookViewListButton[]:=
+	Button["View List", 
+		BugsNotebookWriteViewCell@BugsNotebookToBugs@EvaluationNotebook[],
+		Appearance->
+			{
+				"Default"->
+					FrontEnd`FileName[{"BugTracker"}, "ButtonAppearanceLeft-Default.png"],
+				"Hover"->
+					FrontEnd`FileName[{"BugTracker"}, "ButtonAppearanceLeft-Hover.png"],
+				"Pressed"->
+					FrontEnd`FileName[{"BugTracker"}, "ButtonAppearanceLeft-Pressed.png"]
+				},
+		FrameMargins->{{10, 10}, {5, 5}}
+		]
+
+
+(* ::Subsubsubsection::Closed:: *)
+(*BugsNotebookViewDatasetButton*)
+
+
+
+BugsNotebookViewDatasetButton[]:=
+	Button["View Dataset", 
+		BugsNotebookWriteViewCell@
+			BugsToDataset@BugsNotebookToBugs@EvaluationNotebook[],
+		Appearance->
+			{
+				"Default"->
+					FrontEnd`FileName[{"BugTracker"}, "ButtonAppearanceRight-Default.png"],
+				"Hover"->
+					FrontEnd`FileName[{"BugTracker"}, "ButtonAppearanceRight-Hover.png"],
+				"Pressed"->
+					FrontEnd`FileName[{"BugTracker"}, "ButtonAppearanceRight-Pressed.png"]
+				},
+		FrameMargins->{{10, 10}, {5, 5}}
+		]
+
+
 (* ::Subsection:: *)
 (*Bugs Objects*)
 
+
+
+(* ::Subsubsection::Closed:: *)
+(*$BugObjectKeys*)
+
+
+
+$BugObjectKeys=
+	Prepend["Tag"]@
+		Keys@Options@BugsNotebookCell;
 
 
 (* ::Subsubsection::Closed:: *)
@@ -493,6 +657,17 @@ bugsCellParseTitle[t_]:=
 
 
 (* ::Subsubsubsection::Closed:: *)
+(*bugsCellParseID*)
+
+
+
+bugsCellParseID[t_]:=
+	Replace[Floor@Internal`StringToDouble@t,
+		Except[_Integer]->t
+		]
+
+
+(* ::Subsubsubsection::Closed:: *)
 (*bugsCellParsePackage*)
 
 
@@ -505,7 +680,12 @@ bugsCellParsePackage[p_]:=p
 
 
 
-bugsCellParseTimestamp[d_]:=DateObject[d]
+bugsCellParseTimestamp//Clear
+bugsCellParseTimestamp[d_String?(StringLength[#]>0&)]:=
+	Replace[Quiet@DateObject[d], Except[_DateObject]->d];
+bugsCellParseTimestamp[d_DateObject?(DateObjectQ)]:=
+	d;
+bugsCellParseTimestamp[e_]:=e
 
 
 (* ::Subsubsubsection::Closed:: *)
@@ -533,9 +713,24 @@ bugsCellParseDescription[e_]:=e;
 bugsCellParseExamples[e_]:=
 	Replace[NotebookTools`FlattenCellGroups[e],
 		{
-			Cell[c_, "Text", ___]:>c
-			}
+			Cell[c_, "Text", ___]:>c,
+			Cell[BoxData[b_], ___]:>ToExpression[b, StandardForm, Hold]
+			},
+		1
 		]
+
+
+(* ::Subsubsubsection::Closed:: *)
+(*bugsCellParseNotes*)
+
+
+
+bugsCellParseNotes[e_]:=
+	StringTrim@
+		Map[
+			FE`makePlainText,
+			NotebookTools`FlattenCellGroups[e]
+			]
 
 
 (* ::Subsubsubsection::Closed:: *)
@@ -548,16 +743,23 @@ BugsCellToBug[c_Cell, ops:OptionsPattern[]]:=
 		BugObject@
 			<|
 				"Tag"->tag,
+				"ID"->
+					FirstCase[c, 
+						Cell[t_, ___, CellTags->{"Bug", tag, "ID"}, ___]:>
+							bugsCellParseID[t],
+						None,
+						Infinity
+						],
 				"Title"->
 					FirstCase[c, 
 						Cell[t_, ___, CellTags->{"Bug", tag, "Title"}, ___]:>
 							bugsCellParseTitle[t],
 						None,
 						Infinity
-						],
+						],(*
 				"Resolved"->
 					FirstCase[c, 
-						Cell[___, TaggingRules->{___, "Bugs"->tr_, ___}, ___]:>
+						Cell[___, TaggingRules\[Rule]{___, "Bugs"\[Rule]tr_, ___}, ___]:>
 							Lookup[
 								Lookup[tr, tag, <||>],
 								"Resolved",
@@ -565,10 +767,17 @@ BugsCellToBug[c_Cell, ops:OptionsPattern[]]:=
 								],
 						False,
 						Infinity
-						],
-				"Timestamp"->
+						],*)
+				"CreationDate"->
 					FirstCase[c, 
-						Cell[ts_, ___, CellTags->{"Bug", tag, "Timestamp"}, ___]:>
+						Cell[ts_, ___, CellTags->{"Bug", tag, "CreationDate"}, ___]:>
+							bugsCellParseTimestamp[ts],
+						None,
+						Infinity
+						],
+				"ResolutionDate"->
+					FirstCase[c, 
+						Cell[ts_, ___, CellTags->{"Bug", tag, "CreationDate"}, ___]:>
 							bugsCellParseTimestamp[ts],
 						None,
 						Infinity
@@ -596,8 +805,33 @@ BugsCellToBug[c_Cell, ops:OptionsPattern[]]:=
 						],
 				"Examples"->
 					FirstCase[c, 
-						Cell[e_, ___, CellTags->{"Bug", tag, "Examples"}, ___]:>
-							bugsCellParseExamples@e,
+						Cell[
+							CellGroupData[
+								{
+									Cell[__, CellTags->{"Bug", tag, "Examples"}, ___],
+									e__
+									},
+								___
+								],
+							___
+							]:>
+							bugsCellParseExamples@{e},
+						None,
+						Infinity
+						],
+				"Notes"->
+					FirstCase[c, 
+						Cell[
+							CellGroupData[
+								{
+									Cell[__, CellTags->{"Bug", tag, "Notes"}, ___],
+									e__
+									},
+								___
+								],
+							___
+							]:>
+							bugsCellParseNotes@{e},
 						None,
 						Infinity
 						]

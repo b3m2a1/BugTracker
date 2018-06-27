@@ -1,6 +1,6 @@
 Paclet[
   Name -> "BugTracker",
-  Version -> "1.0.1",
+  Version -> "1.0.2",
   Extensions -> {
     	{
      		"Kernel",
@@ -9,6 +9,7 @@ Paclet[
      	},
     	{
      		"FrontEnd",
+     		"Prepend" -> True,
      		Prepend -> True
      	}
     }
